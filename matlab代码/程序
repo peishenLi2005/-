@@ -1,0 +1,85 @@
+%% ====================== 简易单数字OCR识别系统（模板匹配） ======================
+clear; clc; close all;
+
+%% 1. 参数配置
+templateSize = [1000, 1000];   % 统一归一化尺寸
+% 待识别数字图片路径，请自行修改为你的图片路径
+testImgPath = 'digit_test9.jpg';  
+
+%% 2. 构建0-9数字模板库（可使用标准印刷数字截图保存为template_0~template_9.jpg）
+% 方法：准备10张标准单个数字图片，命名 template_0.jpg ~ template_9.jpg
+templateLib = cell(1,10);
+for num = 0:9
+    tempImg = imread(sprintf('template_%d.jpg', num));
+    tempGray = rgb2gray(tempImg);
+    tempBin = imbinarize(imgaussfilt(tempGray, 1)); % 模板降噪+二值化
+    tempBin = imcomplement(tempBin);  % 前景数字变白
+    templateLib{num+1} = imresize(tempBin, templateSize); % 统一尺寸
+end
+
+%% 3. 读取待识别图像 + 预处理
+I = imread(testImgPath);
+figure('Name','图像预处理过程');
+subplot(2,3,1); imshow(I); title('原始图像');
+
+% 灰度化
+if size(I,3)==3
+    I_gray = rgb2gray(I);
+else
+    I_gray = I;
+end
+subplot(2,3,2); imshow(I_gray); title('灰度图像');
+
+% 高斯滤波降噪
+I_filter = imgaussfilt(I_gray, 1.2);
+subplot(2,3,3); imshow(I_filter); title('高斯降噪');
+
+% 二值化
+I_bin = imbinarize(I_filter);
+subplot(2,3,4); imshow(I_bin); title('二值化图像');
+
+% 反色处理：数字白色，背景黑色
+I_bin = imcomplement(I_bin);
+subplot(2,3,5); imshow(I_bin); title('反色后前景数字');
+
+%% 4. 轮廓检测 + 裁剪单个数字目标
+stats = regionprops(I_bin, 'BoundingBox', 'Area');
+maxArea = 0;
+bestBox = [];
+% 筛选面积最大连通域（单个数字）
+for i = 1:length(stats)
+    if stats(i).Area > maxArea
+        maxArea = stats(i).Area;
+        bestBox = stats(i).BoundingBox;
+    end
+end
+% 裁剪数字区域
+I_crop = imcrop(I_bin, bestBox);
+subplot(2,3,6); imshow(I_crop); title('裁剪后数字区域');
+
+% 归一化到模板尺寸
+I_resize = imresize(I_crop, templateSize);
+
+%% 5. 模板匹配：归一化互相关匹配
+maxCorr = -inf;
+resultDigit = 0;
+figure('Name','模板匹配结果');
+for num = 0:9
+    template = templateLib{num+1};
+    % 计算归一化互相关系数
+    corrVal = normxcorr2(I_resize, template);
+    currentMax = max(corrVal(:));
+    subplot(2,5,num+1);
+    imshow(template);
+    title(sprintf('模板%d 相关值:%.3f', num, currentMax));
+    
+    if currentMax > maxCorr
+        maxCorr = currentMax;
+        resultDigit = num;
+    end
+end
+
+%% 6. 输出识别结果
+fprintf('====================识别结果====================\n');
+fprintf('匹配最大相关系数：%.4f\n', maxCorr);
+fprintf('识别出的单个数字为：%d\n', resultDigit);
